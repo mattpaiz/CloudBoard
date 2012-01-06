@@ -1,45 +1,45 @@
-
 #include <SPI.h>
 #include <Ethernet.h>
+#include <string.h>
 
-#define ERROR_STATE 0
-#define CONNECTED_STATE 1
+#define MIN_DELAY 1
+#define TIME_OUT 2000
+#define GUARD 500
 
-#define FORWARD_LOCAL 0
-#define FORWARD_REMOTE 1
+#define MESH_SIZE 3
+
+#define SENSOR_TEMP 0
+#define SENSOR_LIGHT 1
+#define SENSOR_MOTION 2
+
+#define SENSOR_ID SENSOR_LIGHT
+
+#define DEBUG_COMMAND "/~matt/debug.php"
+#define SYNC_COMMAND "/~matt/index.php"
 
 byte mac[] = {  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-byte ip[] = { 192,168,2,177 };
-byte server[] = { 192,168,2,34 }; //Debugging Server (LAN)
+byte ip[] = { 192,168,1,13 };
+byte sync_server[] = { 192,168,1,34 };
+byte debug_server[] = { 192,168,1,34 };
 
-int guard = 1000;
-int debug_on = 0;
-
-int connection_state = 0;
-int server_address = 0;
+String sensor_values[MESH_SIZE];
 
 String my_address;
-Client debugServer(server, 3674);
+Client sync_client(sync_server, 80);
+Client debug_client(debug_server, 80);
 
-void debugln(String message) {
-  debug(message + "\r\n");
-}
-void debug(String message) {
-  if(debug_on) debugServer.print(message);
+String initCommandMode() {
+  delay(GUARD);
+  return sendAndWait("+++");
 }
 
-String startCommandMode() {
-  if(debug_on) debug("INIT: ");
-  delay(guard);
-  return messageAndResponse("+++");
-}
-String messageAndResponse(String command) {
+String sendAndWait(String command) {
   String result = "";
   Serial.print(command);
   Serial.flush();
   int count = 0;
   while(!Serial.available()) {
-    if(count++ > 2000) return "TIMEOUT";
+    if(count++ > TIME_OUT) return "TIMEOUT";
     delay(1);
   }
   while(Serial.available()) { 
@@ -49,161 +49,152 @@ String messageAndResponse(String command) {
   return result;
 }
 
-String runCommand(String command) {
-  if(debug_on) debug(command + ": ");
-  command += "\r\n";
-  String result = messageAndResponse(command);
-  delay(10);
-  return result;
+String exec(String command) {
+  return sendAndWait(command + "\r\n");
 }
 
-String sendToServer(String command) {
+int post_message(Client client, String values[], int num, String location, byte host[]) {
+  String content;
   
-}
-
-void setup() {
-  // start the Ethernet connection:
-  Ethernet.begin(mac, ip);
-  // start the serial library:
-  Serial.begin(9600);
-  delay(1000);
-  pinMode(2, OUTPUT);
-  pinMode(9, OUTPUT);
-  // give the Ethernet shield a second to initialize:
-  debug_on = debugServer.connect();
-
-  debugln(startCommandMode());
-  guard = 500;
-  debugln(runCommand("ATMY"));
-  debugln(runCommand("ATID1010"));
-
-  //if (debug_on) {
-  if(1) {
-    debugln(runCommand("ATMY0000"));
-    debugln(runCommand("ATDH13A200"));
-    debugln(runCommand("ATDL40647B63"));
-    my_address = "0000";
-  } else {
-    debugln(runCommand("ATMYFFFF"));
-    debugln(runCommand("ATDH0000"));
-    debugln(runCommand("ATDL0000"));
-    my_address = runCommand("ATSH").trim() + "." + runCommand("ATSL").trim();
+  for(int i = 0; i < num; i++) {
+    if(i > 0) content += "&";
+    content += "sensor" + String(i) + "=" + values[i];
   }
   
-  debugln(runCommand("ATWR"));
-  debugln(runCommand("ATCN"));
-  
-  connection_state = CONNECTED_STATE;
-}
-
-int loopCount = 0;
-
-String getUntil(String message, char terminator, int *index) {
-  String result = "";
-  
+  char thehost[20];
+  char thesize[10];
   char ch;
   
-  for(; *index < message.length(); (*index)++) {
-    ch = message.charAt(*index);
-    if(ch == terminator) break;
-    result += ch;
+  sprintf(thehost, "%d.%d.%d.%d", host[0], host[1], host[2], host[3]);
+  sprintf(thesize, "%d", content.length());
+  
+  String result = "";
+  int count = 0;
+
+  client.stop();
+  if(client.connect()) {
+    client.println("POST " + location + " HTTP/1.1");
+    client.println("Host: " + String(thehost));
+    client.println("Content-Length: " + String(thesize)); 
+    client.println("Content-Type: application/x-www-form-urlencoded\n");
+    client.println(content);
+    client.println();
+    client.flush();
+  
+    while(client.connected()) {
+      
+      if (client.available()) {
+        ch = client.read();
+      } else if(count++ > TIME_OUT) return -1;
+     
+      delay(MIN_DELAY);
+    }
+  } else {
+    return 1;
   }
   
-  (*index)++;
-  
-  return result;
+
+  return 0;
 }
 
-void process_sync(String message) {
+void clear_debug() {
+    String blank[] = {""};
+    debugln(blank, 1);
+}
+
+
+void syncln(String values[], int num) {
+  post_message(sync_client, values, num, SYNC_COMMAND, sync_server);
+}
+void debugln(String values[], int num) {
+  post_message(debug_client, values, num, DEBUG_COMMAND, debug_server);
+}
+
+void debug1ln(String value) {
+  String values[] = {value};
+  post_message(debug_client, values, 1, DEBUG_COMMAND, debug_server);
+}
+
+void debug_command(String command) {
+  String values[] = {command, exec(command)};
+  debugln(values, 2);
+}
+
+
+void setup() {
+  Ethernet.begin(mac, ip);
+  Serial.begin(9600);
+  delay(1000);
   
-  int index = 0;
-  String port = getUntil(message, ' ', &index);
-  String value = getUntil(message, '\n', &index);
+  pinMode(2, OUTPUT);
+  pinMode(9, OUTPUT);
   
+  int has_connection = sync_client.connect();
+  debug_client.connect();
+  
+  clear_debug();
+  initCommandMode();
+  debug_command("ATMY");
+  debug_command("ATSH");
+
+  if(has_connection) {
+    debug_command("ATMY0000");
+    my_address = "0";
+    for(int i = 0; i < MESH_SIZE; i++) sensor_values[i] = "0";
+  } else {
+    debug_command("ATMYFFFF");
+    debug_command("ATDH0000");
+    debug_command("ATDL0000");
+    my_address = exec("ATSH").trim() + "." + exec("ATSL").trim();
+  }
+  
+  debug_command("ATWR");
+  debug_command("ATCN");
+}
+
+void process_data(String data) {
   char buffer[10];
-  port.toCharArray(buffer, 10);
-  if(value.equals("low"))
-    digitalWrite(atoi(buffer), LOW);
-  else
-    digitalWrite(atoi(buffer), HIGH);
-}
+  String id = "";
+  String value = "";
+  char ch;
+  int left = 1;
 
-void process(String message, int forward) {
-  
-  int index = 0;
-  String address = getUntil(message, '(', &index);
-  String type = getUntil(message, ')', &index);
-  getUntil(message,' ', &index);
-  String value = getUntil(message, '\n', &index);
-  
-  if(!address.equals("0000") & address.length() < 12) return;
-  String high, low;
-  
-  if(address.equals(my_address)) {  
-      process_sync(value);
-  } else { 
-    switch(forward) {
-      case FORWARD_LOCAL:
-        
-        index = 0;
-        high = getUntil(address, '.', &index);
-        Serial.println(address + "," + type + "," + value);
-        break;
-      case FORWARD_REMOTE:
-        if(value.length() > 3) digitalWrite(9, HIGH);
-        else digitalWrite(9, LOW);
-        
-        debugln(address + "," + type + "," + value);
-        break;
-    }
+  for(int i = 0; i < data.length(); i++) {  
+     ch = data.charAt(i);
+     if(left) {
+       if(ch != ':') id += ch;
+       else left = 0;
+     } else {
+       if(ch != '\n')
+       value += ch;
+     }
   }
-}
-
-void checkRemote() {
-  String message;
-  char c;
-  
-  while(debugServer.available() > 0) {
-    if((c = debugServer.read()) != '\n')
-      message += c;
-    else {
-      process(message, FORWARD_LOCAL);
-      message = "";
-    }
-  }
-}
-
-void checkLocal() {
-  String message = "";
-  char c;
-  while(Serial.available() > 0) {
-    if((c = Serial.read()) != '\n') 
-      message += c;
-    else {
-      process(message, FORWARD_REMOTE);
-      message = "";
-    } 
-  }
+  id.toCharArray(buffer, 10);
+  sensor_values[atoi(buffer)] = value;
 }
 
 void loop()
 {
-  switch(connection_state) {
-    case CONNECTED_STATE:
-      digitalWrite(2, HIGH);
-      if(!my_address.equals("0000")) Serial.println(my_address + "(SYNC): " + String(analogRead(A0)));
-      else checkRemote();
-      checkLocal();
-      break;
-    case ERROR_STATE:
-      debugServer.stop();
-      if(loopCount % 2)
-        digitalWrite(2, HIGH);
-      else
-        digitalWrite(2, LOW);
-      break;
+  
+  String xbee_buffer = "";
+  char ch;
+  
+  if(!my_address.equals("0")) {
+    Serial.println(String(SENSOR_ID) + ":" + String(analogRead(A0)));
+    Serial.flush();
+  } else {
+     syncln(sensor_values, MESH_SIZE);
   }
-  loopCount++;
-  delay(500);
+  
+  while(Serial.available()) {
+    if((ch = Serial.read()) != '\n') if(ch != '\r') xbee_buffer += ch;
+    else {
+      process_data(xbee_buffer);
+      xbee_buffer = "";   
+    }
+  }
+  
+  delay(1000);
 }
+
 
