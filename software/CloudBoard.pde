@@ -3,16 +3,23 @@
 #include <string.h>
 
 #define MIN_DELAY 1
+#define REFRESH_DELAY 750
 #define TIME_OUT 2000
 #define GUARD 500
+#define INIT_SEQUENCE "+++"
 
 #define MESH_SIZE 3
 
 #define SENSOR_TEMP 0
 #define SENSOR_LIGHT 1
 #define SENSOR_MOTION 2
-
 #define SENSOR_ID SENSOR_LIGHT
+
+#define LED_PORT 2
+#define DIGITAL_IN 5
+#define DIGITAL_OUT 9
+
+#define SERVER_ADDRESS "0"
 
 #define DEBUG_COMMAND "/~matt/debug.php"
 #define SYNC_COMMAND "/~matt/index.php"
@@ -32,7 +39,7 @@ Client debug_client(debug_server, 80);
 
 String initCommandMode() {
   delay(GUARD);
-  return sendAndWait("+++");
+  return sendAndWait(INIT_SEQUENCE);
 }
 
 String sendAndWait(String command) {
@@ -42,11 +49,11 @@ String sendAndWait(String command) {
   int count = 0;
   while(!Serial.available()) {
     if(count++ > TIME_OUT) return "TIMEOUT";
-    delay(1);
+    delay(MIN_DELAY);
   }
   while(Serial.available()) { 
     result += ((char) Serial.read());
-    delay(1);
+    delay(MIN_DELAY);
   }
   return result;
 }
@@ -84,7 +91,6 @@ int post_message(Client client, String values[], int num, String location, byte 
     client.flush();
   
     while(client.connected()) {
-      
       if (client.available()) {
         ch = client.read();
       } else if(count++ > TIME_OUT) return -1;
@@ -128,9 +134,9 @@ void setup() {
   Serial.begin(9600);
   delay(1000);
   
-  pinMode(2, OUTPUT);
-  pinMode(9, OUTPUT);
-  pinMode(5, INPUT);
+  pinMode(LED_PORT, OUTPUT);
+  pinMode(DIGITAL_OUT, OUTPUT);
+  pinMode(DIGITAL_IN, INPUT);
   
   int has_connection = sync_client.connect();
   debug_client.connect();
@@ -142,7 +148,7 @@ void setup() {
 
   if(has_connection) {
     debug_command("ATMY0000");
-    my_address = "0";
+    my_address = SERVER_ADDRESS;
     for(int i = 0; i < MESH_SIZE; i++) sensor_values[i] = "0";
   } else {
     debug_command("ATMYFFFF");
@@ -182,14 +188,18 @@ void loop()
   String xbee_buffer = "";
   char ch;
   
-  if(!my_address.equals("0")) {
-    if(count % 3 == 0) 
-      Serial.println(String(SENSOR_LIGHT) + ":" + String(analogRead(A0)));
-    else if(count % 3 == 1)
-      Serial.println(String(SENSOR_MOTION) + ":" + String(digitalRead(5)));
-    else if(count % 3 == 2)
-      Serial.println(String(SENSOR_TEMP) + ":" + String(analogRead(A1)));
-      
+  if(!my_address.equals(SERVER_ADDRESS)) { 
+    switch(count % MESH_SIZE) {
+      case SENSOR_LIGHT:
+        Serial.println(String(SENSOR_LIGHT) + ":" + String(analogRead(A0)));
+        break;
+      case SENSOR_MOTION:
+        Serial.println(String(SENSOR_MOTION) + ":" + String(digitalRead(DIGITAL_IN)));
+        break;
+      case SENSOR_TEMP:
+        Serial.println(String(SENSOR_TEMP) + ":" + String(analogRead(A1)));
+        break;     
+    }
     Serial.flush();
   } else {
      syncln(sensor_values, MESH_SIZE);
@@ -204,5 +214,5 @@ void loop()
   }
   
   count++;
-  delay(750);
+  delay(REFRESH_DELAY);
 }
