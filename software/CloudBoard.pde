@@ -2,6 +2,15 @@
 #include <Ethernet.h>
 #include <string.h>
 
+#define NUM_LOCATIONS 5
+#define LOCATION_ELEVATOR   "a00U0000002GfN0IAK"
+#define LOCATION_KITCHEN    "a00U0000002Gf9CIAS"
+#define LOCATION_CONFERENCE "a00U0000002GfRBIA0"
+#define LOCATION_CUBES      "a00U0000002GfR6IAK"
+#define LOCATION_LOBBY      "a00U0000001gvbVIAQ"
+
+String all_locations[] = {LOCATION_ELEVATOR, LOCATION_KITCHEN, LOCATION_CONFERENCE, LOCATION_CUBES, LOCATION_LOBBY};
+
 #define MIN_DELAY 1
 #define REFRESH_DELAY 750
 #define TIME_OUT 2000
@@ -15,6 +24,8 @@
 #define SENSOR_MOTION 2
 #define SENSOR_ID SENSOR_LIGHT
 
+String all_labels[] = {"location", "T", "L", "M"};
+
 #define LED_PORT 2
 #define DIGITAL_IN 5
 #define DIGITAL_OUT 9
@@ -23,15 +34,18 @@
 
 #define DEBUG_COMMAND "/~matt/debug.php"
 #define SYNC_COMMAND "/~matt/index.php"
+#define HEROKU_COMMAND "/sensor"
 
 byte mac[] = {  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 byte ip[] = { 192,168,1,13 };
+
+byte heroku_server[] = { 107, 22, 180, 255 };
 byte sync_server[] = { 192,168,1,34 };
 byte debug_server[] = { 192,168,1,34 };
 
 unsigned int count = 0;
 
-String sensor_values[MESH_SIZE];
+String sensor_values[MESH_SIZE + 1];
 
 String my_address;
 Client sync_client(sync_server, 80);
@@ -67,7 +81,7 @@ int post_message(Client client, String values[], int num, String location, byte 
   
   for(int i = 0; i < num; i++) {
     if(i > 0) content += "&";
-    content += "sensor" + String(i) + "=" + values[i];
+    content += all_labels[i] + "=" + values[i];
   }
   
   char thehost[20];
@@ -179,7 +193,7 @@ void process_data(String data) {
      }
   }
   id.toCharArray(buffer, 10);
-  sensor_values[atoi(buffer)] = value;
+  sensor_values[atoi(buffer) + 1] = value;
 }
 
 void loop()
@@ -202,7 +216,8 @@ void loop()
     }
     Serial.flush();
   } else {
-     syncln(sensor_values, MESH_SIZE);
+     sensor_values[0] = all_locations[count %  NUM_LOCATIONS];
+     syncln(sensor_values, MESH_SIZE + 1);
   }
   
   while(Serial.available()) {
