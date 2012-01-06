@@ -22,6 +22,8 @@ byte ip[] = { 192,168,1,13 };
 byte sync_server[] = { 192,168,1,34 };
 byte debug_server[] = { 192,168,1,34 };
 
+unsigned int count = 0;
+
 String sensor_values[MESH_SIZE];
 
 String my_address;
@@ -128,6 +130,7 @@ void setup() {
   
   pinMode(2, OUTPUT);
   pinMode(9, OUTPUT);
+  pinMode(5, INPUT);
   
   int has_connection = sync_client.connect();
   debug_client.connect();
@@ -180,7 +183,13 @@ void loop()
   char ch;
   
   if(!my_address.equals("0")) {
-    Serial.println(String(SENSOR_ID) + ":" + String(analogRead(A0)));
+    if(count % 3 == 0) 
+      Serial.println(String(SENSOR_LIGHT) + ":" + String(analogRead(A0)));
+    else if(count % 3 == 1)
+      Serial.println(String(SENSOR_MOTION) + ":" + String(digitalRead(5)));
+    else if(count % 3 == 2)
+      Serial.println(String(SENSOR_TEMP) + ":" + String(analogRead(A1)));
+      
     Serial.flush();
   } else {
      syncln(sensor_values, MESH_SIZE);
@@ -194,7 +203,6 @@ void loop()
     }
   }
   
-  delay(1000);
+  count++;
+  delay(750);
 }
-
-
