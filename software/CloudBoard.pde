@@ -9,6 +9,8 @@
 #define LOCATION_CUBES      "a00U0000002GfR6IAK"
 #define LOCATION_LOBBY      "a00U0000001gvbVIAQ"
 
+//#define USE_HEROKU
+
 String all_locations[] = {LOCATION_ELEVATOR, LOCATION_KITCHEN, LOCATION_CONFERENCE, LOCATION_CUBES, LOCATION_LOBBY};
 
 #define MIN_DELAY 1
@@ -31,16 +33,21 @@ String all_labels[] = {"location", "T", "L", "M"};
 #define DIGITAL_OUT 9
 
 #define SERVER_ADDRESS "0"
-
 #define DEBUG_COMMAND "/~matt/debug.php"
-#define SYNC_COMMAND "/~matt/index.php"
-#define HEROKU_COMMAND "/sensor"
+
+#ifdef USE_HEROKU
+  #define SYNC_COMMAND "/sensor"
+  byte sync_server[] = { 107, 22, 180, 255 };
+#else
+  #define SYNC_COMMAND "/~matt/index.php"
+  byte sync_server[] = { 192,168,1,34 };
+#endif
+
 
 byte mac[] = {  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 byte ip[] = { 192,168,1,13 };
 
-byte heroku_server[] = { 107, 22, 180, 255 };
-byte sync_server[] = { 192,168,1,34 };
+
 byte debug_server[] = { 192,168,1,34 };
 
 unsigned int count = 0;
@@ -193,7 +200,15 @@ void process_data(String data) {
      }
   }
   id.toCharArray(buffer, 10);
-  sensor_values[atoi(buffer) + 1] = value;
+  int index = atoi(buffer);
+  sensor_values[index+ 1] = value;
+  
+  if(index == SENSOR_MOTION) {
+    if(value.equals("1"))
+      digitalWrite(DIGITAL_OUT, HIGH);
+    else
+      digitalWrite(DIGITAL_OUT, LOW);
+  }
 }
 
 void loop()
