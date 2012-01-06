@@ -9,7 +9,7 @@
 #define LOCATION_CUBES      "a00U0000002GfR6IAK"
 #define LOCATION_LOBBY      "a00U0000001gvbVIAQ"
 
-//#define USE_HEROKU
+#define USE_HEROKU
 
 String all_locations[] = {LOCATION_ELEVATOR, LOCATION_KITCHEN, LOCATION_CONFERENCE, LOCATION_CUBES, LOCATION_LOBBY};
 
@@ -37,7 +37,7 @@ String all_labels[] = {"location", "T", "L", "M"};
 
 #ifdef USE_HEROKU
   #define SYNC_COMMAND "/sensor"
-  byte sync_server[] = { 107, 22, 180, 255 };
+  byte sync_server[] = { 50,17,208,142 };
 #else
   #define SYNC_COMMAND "/~matt/index.php"
   byte sync_server[] = { 192,168,1,34 };
@@ -104,7 +104,11 @@ int post_message(Client client, String values[], int num, String location, byte 
   client.stop();
   if(client.connect()) {
     client.println("POST " + location + " HTTP/1.1");
+#ifdef USE_HEROKU
+    client.println("Host: cloudboard.herokuapp.com");
+#else
     client.println("Host: " + String(thehost));
+#endif  
     client.println("Content-Length: " + String(thesize)); 
     client.println("Content-Type: application/x-www-form-urlencoded\n");
     client.println(content);
@@ -243,6 +247,10 @@ void loop()
     }
   }
   
-  count++;
+  if(count++ % 2)
+    digitalWrite(LED_PORT, HIGH);
+  else
+    digitalWrite(LED_PORT, LOW);
+    
   delay(REFRESH_DELAY);
 }
